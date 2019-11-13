@@ -1,7 +1,8 @@
 #!/bin/bash
 #2019-11-13 Jani Janttari <janttari@yandex.ru>
 #Polttaa DVB-tekstityksen kiinteäksi transport streamiin. DVB-tekstityksen puuttuessa käytetään teksti-tv-tekstitystä
-
+# ./ts_polta_teksti yle.ts
+#
 homeLocation=$(pwd)
 tempDir="/tmp/ts_polta_teksti"
 
@@ -74,7 +75,7 @@ if [[ $dvbSubAvailable ]];then #Using DVB-subtitles
         exit 1
     fi
     echo str $subtrack
-    ffmpeg -y -i "$videoSource" -c:a copy -c:v libx264 -filter_complex [0:v]["$subtrack"]overlay $baseVideoSource.mp4
+    ffmpeg -y -i "$videoSource" -c:a copy -c:v libx264 -filter_complex [0:v]["$subtrack"]overlay $baseVideoSource.mp4 # in Raspberry use "-c:v h264_omx "
     
 elif [[ $dvbTeletextAvailable ]];then #Using teletext-subtitles
     debug "Using teletext subtitles"
