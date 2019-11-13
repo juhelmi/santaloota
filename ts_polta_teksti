@@ -43,16 +43,16 @@ baseVideoSource="${baseVideoSource%.*}" # Source file name without  path and ext
 ######################################################################## MAIN ###############################################
 
 
-if [[ $language == "fi" ]] ; then language="fin";fi
-if [[ $language == "sv" ]] ; then language="swe";fi
-if [[ $language == "no" ]] ; then language="nor";fi
+if [[ $language == "fi" ]] || [ $language == "fin" ]; then longLanguage="fin"; shortLanguage="fi"; fi
+if [[ $language == "sv" ]] || [ $language == "swe" ]; then longLanguage="swe"; shortLanguage="sv"; fi
+if [[ $language == "no" ]] || [ $language == "nor" ]; then longLanguage="nor"; shortLanguage="no"; fi
 
 
  # ----------------------------------------------------------------- *** Video source is DVB *** --------------------------------------
 [ ! -f "$videoSource" ] && echo "File not exist!" && exit #If given source file dir does not exist then exit
 lcall=$LC_ALL 
 
-testSubtitles=$(ffprobe "$videoSource" 2>&1 |grep Subtitle|grep "$language") #Check is DVB and teletext subtitles available
+testSubtitles=$(ffprobe "$videoSource" 2>&1 |grep Subtitle|grep "$longLanguage") #Check is DVB and teletext subtitles available
 echo $testSubtitles
 if [[ $testSubtitles == *"dvb_subtitle"* ]];then dvbSubAvailable=1;fi #There is DVB subtitle available 
 if [[ $testSubtitles == *"dvb_teletext"* ]];then dvbTeletextAvailable=1;fi #There is teletext subtitle available
@@ -60,24 +60,20 @@ if !([[ $dvbSubAvailable ]]||[[ $dvbTeletextAvailable ]]); then echo "No subtitl
 
 if [[ $dvbSubAvailable ]];then #Using DVB-subtitles
     debug "Using DVB subtitles"
-    subtrack=$(echo $testSubtitles|grep "$language"|grep 'dvb_subtitle'|cut -d '#' -f 2|cut -d '[' -f 1)
+    subtrack=$(echo $testSubtitles|grep "$longLanguage"|grep 'dvb_subtitle'|cut -d '#' -f 2|cut -d '[' -f 1)
     if [[ $subtrack == "" ]]; then
         echo "Subtitle $language not found!"
         exit 1
     fi
     echo str $subtrack
-    ffmpeg -y -i "$videoSource" -filter_complex [0:v]["$subtrack"]overlay -map 0:a -map 0:v  -c:a copy -c:v libx264 "$baseVideoSource".mp4 # in Raspberry use "-c:v h264_omx "
+    ffmpeg -y -i "$videoSource" -filter_complex [0:v]["$subtrack"]overlay -map 0:a -map 0:v  -c:a copy -c:v libx264 "$baseVideoSource".mp4 # in Raspberry use "-c:v h264_omx"
     
 elif [[ $dvbTeletextAvailable ]];then #Using teletext-subtitles
-    if [[ $language == "fin" ]] ; then language="fi";fi
-    if [[ $language == "swe" ]] ; then language="sv";fi
-    if [[ $language == "nor" ]] ; then language="no";fi
     debug "Using teletext subtitles"
-    tpage=$(mediainfo --Output=XML "$videoSource"|grep -a3 "<Language>$language" |grep -a2 "Teletext Subtitle"|head -n 1|cut -d '-' -f 2|cut -d '<' -f 1) # teletext page number
-    debug tpage $tpage
+    tpage=$(mediainfo --Output=XML "$videoSource"|grep -a3 "<Language>$shortLanguage" |grep -a2 "Teletext Subtitle"|head -n 1|cut -d '-' -f 2|cut -d '<' -f 1) # teletext page number
     ccextractor -tpage $tpage "$videoSource" -o "$baseVideoSource".srt >/dev/null 2>/dev/null #teletext subtitle to srt
-    #ffmpeg -y -i "$videoSource" -vf subtitles="$baseVideoSource".srt:force_style="FontName='/usr/share/fonts/tiresias_infofont.ttf'\,FontSize=16" -map 0:a -map 0:v -c:a copy -c:v libx264 "$baseVideoSource".mp4
-    ffmpeg -y -i "$videoSource" -vf subtitles="$baseVideoSource".srt:force_style="FontSize=16" -map 0:a -map 0:v -c:a copy -c:v libx264 "$baseVideoSource".mp4
+    ffmpeg -y -i "$videoSource" -vf subtitles="$baseVideoSource".srt:force_style="FontName='/usr/share/fonts/tiresias_infofont.ttf'\,FontSize=16" -map 0:a -map 0:v -c:a copy -c:v libx264 "$baseVideoSource".mp4
+    echo ffmpeg -y -i "$videoSource" -vf subtitles="$baseVideoSource".srt:force_style="FontSize=16" -map 0:a -map 0:v -c:a copy -c:v libx264 "$baseVideoSource".mp4
     exit 1
 else
     echo "No subtitles found!"
