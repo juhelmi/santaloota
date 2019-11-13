@@ -1,0 +1,103 @@
+#!/bin/bash
+#2019-11-13 Jani Janttari <janttari@yandex.ru>
+#Polttaa DVB-tekstityksen kiinteäksi transport streamiin. DVB-tekstityksen puuttuessa käytetään teksti-tv-tekstitystä
+
+homeLocation=$(pwd)
+tempDir="/tmp/ts_polta_teksti"
+
+
+######################################################################## FUNCTIONS ##########
+usage(){ #-------------------------------------------------------------- Usage print
+    echo "Usage:"
+    echo "$0 filename"
+    echo "$0 -lang=swe filename"
+    exit 1
+}
+
+debug(){ #-------------------------------------------------------------- Print debug messages
+    echo "$1"
+}
+
+######################################################################## INITIALIZE #######################################
+[[ $# -eq 0 ]] && usage # If no arguments given, print usage message
+
+language=fin # Default language finnish
+
+
+
+for var in "$@" #Iterate all command line arduments
+do
+    if [[ $var == -lang* ]] ; then #If language in argument
+        language=$(echo $var|cut -f 2 -d "=") #  Example argument -lang=swe -->swe
+    fi
+    
+    if [[ $var == -nodelete ]] ; then nodelete=1;fi #don't clear temp files
+    
+done
+videoSource=$var # Last (or only) argument is source file name
+videoSource=${videoSource%/} #Remove last "/" if exist
+baseVideoSource=$(basename -- "$videoSource")
+extension="${baseVideoSource##*.}"
+baseVideoSource="${baseVideoSource%.*}" # Source file name without  path and extension
+
+######################################################################## MAIN ###############################################
+if ! [ -d "$tempDir" ]; then #------------------------------------------ Create temp directory ------------------------------
+    mkdir -p $tempDir
+fi
+lastSubdir=$(ls $tempDir|tail -n 1) #katsotaan mikä on suurin olemassaoleva alihakemisto
+newSubdir=$(expr $lastSubdir + 1) #alihakemisto lukuarvona olemassaoleva suurin + 1
+tmnewSubdir="0000"$newSubdir
+snewSubdir=${tmnewSubdir: -4}
+tempDir=$tempDir/$snewSubdir #on nyt muodossa /tmp/dvbteksti2srt/0001 (-9999)
+mkdir $tempDir #-----------------------------------------------------------------------------------------------------------
+
+if [[ $language == "fi" ]] ; then language="fin";fi
+if [[ $language == "sv" ]] ; then language="swe";fi
+if [[ $language == "no" ]] ; then language="nor";fi
+
+
+ # ----------------------------------------------------------------- *** Video source is DVB *** --------------------------------------
+[ ! -f "$videoSource" ] && echo "File not exist!" && exit #If given source file dir does not exist then exit
+lcall=$LC_ALL 
+
+testSubtitles=$(ffprobe "$videoSource" 2>&1 |grep Subtitle|grep "$lang") #Check is DVB and teletext subtitles available
+echo $testSubtitles
+if [[ $testSubtitles == *"dvb_subtitle"* ]];then dvbSubAvailable=1;fi #There is DVB subtitle available 
+if [[ $testSubtitles == *"dvb_teletext"* ]];then dvbTeletextAvailable=1;fi #There is teletext subtitle available
+if !([[ $dvbSubAvailable ]]||[[ $dvbTeletextAvailable ]]); then echo "No subtitles found";exit;fi
+
+if [[ $dvbSubAvailable ]];then #Using DVB-subtitles
+    debug "Using DVB subtitles"
+    subtrack=$(echo $testSubtitles|grep "$language"|grep 'dvb_subtitle'|cut -d '#' -f 2|cut -d '[' -f 1)
+    if [[ $subtrack == "" ]]; then
+        echo "Subtitle $language not found!"
+        exit 1
+    fi
+    echo str $subtrack
+    ffmpeg -y -i "$videoSource" -c:a copy -c:v libx264 -filter_complex [0:v]["$subtrack"]overlay $baseVideoSource.mp4
+    
+elif [[ $dvbTeletextAvailable ]];then #Using teletext-subtitles
+    debug "Using teletext subtitles"
+    echo "No support for teletext subtitle yet!"
+    exit 1
+else
+    echo "No subtitles found!"
+fi
+exit
+
+
+#-------------------------------------------------------------------- /video source type
+    
+if [ -z ${nodelete+x} ]; then
+    echo "Deleting temp files..."
+    rm -rf $tempDir
+fi
+
+exit
+
+
+
+
+
+
+
