@@ -23,7 +23,7 @@ function avaaTiedosto {
 }
 
 function tallennaTiedosto {
-    tallennaTiedosto=$(yad --file --save --confirm-overwrite  --button=gtk-go-back:3 --button=gtk-cancel:1 --button=gtk-ok:0 --filename="$baseVideoSource.mp4")
+    tallennaTiedosto=$(yad --title Tallenna --file --save --confirm-overwrite  --button=gtk-go-back:3 --button=gtk-cancel:1 --button=gtk-ok:0 --filename="$baseVideoSource.mp4")
     if [ $? -ne 0 ];then exit; fi
 }
 
