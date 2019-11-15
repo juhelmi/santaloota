@@ -1,4 +1,6 @@
 #!/bin/bash
+#HUOM! UUSI VERSIO https://github.com/janttari/santaloota/tree/master/poltateksti
+#
 #2019-11-13 Jani Janttari <janttari@yandex.ru>
 #Polttaa DVB-tekstityksen kiinteäksi transport streamiin. DVB-tekstityksen puuttuessa käytetään teksti-tv-tekstitystä
 # ./ts_polta_teksti yle.ts

@@ -1,0 +1,132 @@
+#!/bin/bash
+#2019-11-15 Jani Janttari <janttari@yandex.ru>
+#
+#Skripti tekstien polttamiseen kiinni kuvaan transport streamista
+#riippuvuudet: sudo apt install -y yad mediainfo ffmpeg jq
+#lisäksi tarttee asentaa: https://github.com/CCExtractor/ccextractor jos haluaa teksti-tv-tekstejä käyttää
+# ccextractorin asentamiseen valmis skripti: https://github.com/janttari/dvbteksti2srt
+
+temppihakemisto="/tmp/tspolta"
+
+ffAlku="ffmpeg -y -i "
+ffLoppu=" -map 0:v -c:a copy -c:v libx264"
+rm -rf $temppihakemisto
+mkdir -p $temppihakemisto
+
+function avaaTiedosto {
+    lahdeTiedosto=$(yad --file-selection --title "Avaa lähdetiedosto")
+    if [ $? -ne 0 ];then exit; fi
+    videoSource=${lahdeTiedosto%/} #Remove last "/" if exist
+    baseVideoSource=$(basename -- "$videoSource")
+    extension="${baseVideoSource##*.}"
+    baseVideoSource="${baseVideoSource%.*}" # Source file name without  path and extension
+}
+
+function tallennaTiedosto {
+    tallennaTiedosto=$(yad --file --save --confirm-overwrite  --button=gtk-go-back:3 --button=gtk-cancel:1 --button=gtk-ok:0 --filename="$baseVideoSource.mp4")
+    if [ $? -ne 0 ];then exit; fi
+}
+
+function getMediainfo { #tallennetaan mediainfolla tilapäinen tiedosto striimin tiedoista
+    mediainfo --output=JSON  "$lahdeTiedosto" |jq -r '.media.track[] | "\(.ID);\(.Format);\(.Language);"'|head -n -1 >$temppihakemisto/mediainfo
+}
+
+function luoStriimiListat {
+    while IFS= read -r rivi
+    do
+        pidDec=$(echo $rivi|cut -d ';' -f 1) #PID desimaalimuodossa ekassa sarakkeessa
+        pidHex=$(echo "obase=16; $pidDec" | bc)
+        if [[ $pidDec == *"-"* ]]; then #Jos PIDissä on miinus-merkki, se onkin teksti-tv:n tekstitys 
+            page=$(echo $pidDec|cut -d '-' -f 2 ) #Tekstityssivun numero
+        fi
+        
+        striimiTyyppi=$(echo $rivi|cut -d ";" -f 2) #Striimin tyyppi on toisessa sarakkeessa
+        kieli=$(echo $rivi|cut -d ";" -f 3)
+        
+        if [[ "$striimiTyyppi" == "Teletext Subtitle" ]]; then #Tämä raita on teksti-tv-tekstitys
+            echo "$page|$kieli" >> $temppihakemisto/teletekstit
+        
+        elif [[ "$striimiTyyppi" == "DVB Subtitle" ]]; then #Tämä raita on DVB-tekstitys
+            echo "$pidHex|$kieli" >> $temppihakemisto/dvbtekstit
+
+        elif [[ "$striimiTyyppi" == *"Audio"* ]] || [[ "$striimiTyyppi" == "A"* ]]; then #Tämä raita on audio !!!PITÄÄ MIETTIÄ PAREMMIN TÄÄ
+            echo "$pidHex|$kieli|$striimiTyyppi" >> $temppihakemisto/audio
+        fi
+        echo $pidDec $pidHex $page $striimiTyyppi
+    done < "$temppihakemisto/mediainfo"
+}
+
+function valitseTekstitys {
+    tekstiParam=""
+    yadTekstit=""
+     if [ -f $temppihakemisto/teletekstit ]; then #Käydään läpi tekstitvtekstit
+         while IFS= read -r line
+        do
+            lang=$(echo $line|cut -d '|' -f 2)
+            page=$(echo $line|cut -d '|' -f 1)
+            yadTekstit+=" false $lang TELE $page"
+        done < "$temppihakemisto/teletekstit"
+     fi
+     if [ -f $temppihakemisto/dvbtekstit ]; then #Käydään läpi dvb-tekstit
+         while IFS= read -r line
+        do
+            lang=$(echo $line|cut -d '|' -f 2)
+            pid=$(echo $line|cut -d '|' -f 1)
+            yadTekstit+=" false $lang DVB $pid"
+        done < "$temppihakemisto/dvbtekstit"
+     fi
+    tvalinta=$(yad --title "Valitse tekstitys" --geometry 800x600 --radiolist --list --column="" --column=Kieli --column=Tyyppi --column=PID $yadTekstit)
+    if [ $? -ne 0 ];then exit; fi
+    ttyyppi=$(echo $tvalinta|cut -d '|' -f 3) #onko kyseessä DVB vai tekstitv-teksti
+    echo ttyyppi $ttyyppi
+    tpid=$(echo $tvalinta|cut -d '|' -f 4) #pässä on tekstityksen PID tai sivunumero
+    if [[ "$ttyyppi" == "DVB" ]]; then
+        tekstiParam=" -filter_complex \"[0:v][i:0x$tpid]overlay\" "    
+    elif [[ "$ttyyppi" == "TELE" ]];then
+        echo "ccextractor purkaa tekstejä, hetki"
+        ccextractor -tpage $tpid "$lahdeTiedosto" -o "$temppihakemisto/subs.srt" >/dev/null 2>/dev/null #teletext subtitle to srt
+        #tekstiParam=" -vf subtitles=$temppihakemisto/subs.srt:force_style=FontName=/usr/share/fonts/tiresias_infofont.ttf\,FontSize=16 "
+        tekstiParam=" -vf subtitles=$temppihakemisto/subs.srt "
+    fi
+}
+
+function valitseAudio {
+    audioParam=""
+    yadAudio=""
+    if [ -f $temppihakemisto/audio ]; then #Käydään läpi audiot
+        while IFS= read -r line
+        do
+            lang=$(echo $line|cut -d '|' -f 2)
+            autyyppi=$(echo $line|cut -d '|' -f 3|cut -c 1-4)
+            pid=$(echo $line|cut -d '|' -f 1)
+            yadAudio+=" true $lang $autyyppi $pid"
+        done < "$temppihakemisto/audio"
+    fi
+    yadavalinta=$(yad --title "Valitse audio" --geometry 800x600 --checklist --list --column="" --column=Kieli --column=Tyyppi --column=PID $yadAudio )
+    if [ $? -ne 0 ];then exit; fi
+    echo "$yadavalinta" >/$temppihakemisto/yadaudio
+    if [ -f $temppihakemisto/yadaudio ]; then #Käydään läpi yadaudio
+        while IFS= read -r line
+        do
+            valinta=$(echo $line|cut -d '|' -f 1)
+            pid=$(echo $line|cut -d '|' -f 4)
+            if [[ $valinta == "TRUE" ]];then
+                audioParam+=" -map i:0x$pid"
+            fi
+        done < "$temppihakemisto/yadaudio"
+     fi    
+}
+
+function suoritaFfmpeg {
+    ffKomento="$ffAlku $lahdeTiedosto $tekstiParam $audioParam $ffLoppu $baseVideoSource.mp4"
+    echo suorita FF $ffKomento
+}
+
+avaaTiedosto
+echo avataan $lahdeTiedosto
+getMediainfo 
+luoStriimiListat
+valitseTekstitys
+valitseAudio
+tallennaTiedosto
+suoritaFfmpeg
