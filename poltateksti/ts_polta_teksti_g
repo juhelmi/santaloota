@@ -39,20 +39,20 @@ function luoStriimiListat {
         if [[ $pidDec == *"-"* ]]; then #Jos PIDissä on miinus-merkki, se onkin teksti-tv:n tekstitys 
             page=$(echo $pidDec|cut -d '-' -f 2 ) #Tekstityssivun numero
         fi
-        
+
         striimiTyyppi=$(echo $rivi|cut -d ";" -f 2) #Striimin tyyppi on toisessa sarakkeessa
         kieli=$(echo $rivi|cut -d ";" -f 3)
-        
+
         if [[ "$striimiTyyppi" == "Teletext Subtitle" ]]; then #Tämä raita on teksti-tv-tekstitys
             echo "$page|$kieli" >> $temppihakemisto/teletekstit
-        
+
         elif [[ "$striimiTyyppi" == "DVB Subtitle" ]]; then #Tämä raita on DVB-tekstitys
             echo "$pidHex|$kieli" >> $temppihakemisto/dvbtekstit
 
         elif [[ "$striimiTyyppi" == *"Audio"* ]] || [[ "$striimiTyyppi" == "A"* ]]; then #Tämä raita on audio !!!PITÄÄ MIETTIÄ PAREMMIN TÄÄ
             echo "$pidHex|$kieli|$striimiTyyppi" >> $temppihakemisto/audio
         fi
-        echo $pidDec $pidHex $page $striimiTyyppi
+        #echo $pidDec $pidHex $page $striimiTyyppi
     done < "$temppihakemisto/mediainfo"
 }
 
@@ -78,10 +78,10 @@ function valitseTekstitys {
     tvalinta=$(yad --title "Valitse tekstitys" --geometry 800x600 --radiolist --list --column="" --column=Kieli --column=Tyyppi --column=PID $yadTekstit)
     if [ $? -ne 0 ];then exit; fi
     ttyyppi=$(echo $tvalinta|cut -d '|' -f 3) #onko kyseessä DVB vai tekstitv-teksti
-    echo ttyyppi $ttyyppi
+    #echo ttyyppi $ttyyppi
     tpid=$(echo $tvalinta|cut -d '|' -f 4) #pässä on tekstityksen PID tai sivunumero
     if [[ "$ttyyppi" == "DVB" ]]; then
-        tekstiParam=" -filter_complex \"[0:v][i:0x$tpid]overlay\" "    
+        tekstiParam=" -filter_complex [0:v][i:0x$tpid]overlay "
     elif [[ "$ttyyppi" == "TELE" ]];then
         echo "ccextractor purkaa tekstejä, hetki"
         ccextractor -tpage $tpid "$lahdeTiedosto" -o "$temppihakemisto/subs.srt" >/dev/null 2>/dev/null #teletext subtitle to srt
@@ -114,16 +114,16 @@ function valitseAudio {
                 audioParam+=" -map i:0x$pid"
             fi
         done < "$temppihakemisto/yadaudio"
-     fi    
+     fi
 }
 
 function suoritaFfmpeg {
     ffKomento="$ffAlku $lahdeTiedosto $tekstiParam $audioParam $ffLoppu $baseVideoSource.mp4"
-    echo suorita FF $ffKomento
+    #echo suorita FF $ffKomento
+    $ffKomento
 }
 
 avaaTiedosto
-echo avataan $lahdeTiedosto
 getMediainfo 
 luoStriimiListat
 valitseTekstitys
