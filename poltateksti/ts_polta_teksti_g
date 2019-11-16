@@ -1,6 +1,7 @@
 #!/bin/bash
 #2019-11-15 Jani Janttari <janttari@yandex.ru>
 #
+#
 #Skripti tekstien polttamiseen kiinni kuvaan transport streamista
 #riippuvuudet: sudo apt install -y yad mediainfo ffmpeg jq
 #lisäksi tarttee asentaa: https://github.com/CCExtractor/ccextractor jos haluaa teksti-tv-tekstejä käyttää
