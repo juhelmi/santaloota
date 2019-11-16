@@ -1,0 +1,67 @@
+#!/bin/bash
+#2019-11-16 Jani Janttari <janttari@yandex.ru>
+#
+#Funktio, joka mediainfolla etsii audio ja tekstityt-raitojen PIDit ja palauttaa ne arrayna.
+#Riippuvuudet: sudo apt install -y mediainfo jq
+#
+#ffmpegissä PID toimii stremin numeron sijaan i-tagilla:
+# -filter_complex [0:v][0:6]overlay  --->   -filter_complex [0:v][i:0x403]overlay 
+# -map 0:4    --->    -map i:0x28A
+#
+
+getTracks() { #Anna tänne parametrinä <tiedosto>
+    mapfile -t mediainfo < <( mediainfo --output=JSON "$1"|jq -r '.media.track[] | "\(."@type");\(.ID);\(.Format);\(.Language);"' )
+    trackDvbTeksti=()
+    trackTeleteksti=()
+    trackAudio=()
+    for item in "${mediainfo[@]}"
+    do
+        type=$(echo $item|cut -d ';' -f 1) # General, Video, Audio, Text, Menu
+        pidDec=$(echo $item|cut -d ';' -f 2) #6556
+        pidHex=0x$(echo "obase=16; $pidDec" | bc) #0x199C
+        format=$(echo $item|cut -d ';' -f 3) #AVC, MPEG Audio, DVB Subtitle, Teletext Subtitle ...
+        language=$(echo $item|cut -d ';' -f 4) # fi, sv, da, en, no ...
+        
+        if [[ "$type" == "Text" ]] && [[ $format == "DVB Subtitle" ]];then # DVB-teksti
+            trackDvbTeksti+=("$language;$pidHex")
+        fi
+        
+        if [[ "$type" == "Text" ]] && [[ $format == "Teletext Subtitle" ]];then # DVB-teksti
+            page=$(echo $pidDec |cut -d '-' -f 2)
+            trackTeleteksti+=("$language;$page")
+        fi
+        
+        if [[ "$type" == "Audio" ]];then # Audio
+            trackAudio+=("$language;$pidHex")
+        fi
+    done
+}
+
+listTracks() {
+    for item in "${trackDvbTeksti[@]}" #listataan dvb-tekstit
+    do
+        echo "dvbsubtitle;$item"
+    done
+    
+    
+    for item in "${trackTeleteksti[@]}" #listataan teletekstit
+    do
+        echo "teletextsubtitle;$item"
+    done
+    
+    for item in "${trackAudio[@]}" #listataan audiot
+    do
+        echo "audio;$item"
+    done
+}
+
+
+
+getTracks "$1" #komentoriviparametrina annetaan tiedosto
+listTracks
+
+#käyttöesimerkkejä:
+#   ./minfo ../sfkanalen.ts|grep "teletextsubtitle;fi"|cut -d ';' -f 3          #hakee teksti-tvtekstityksen sivun kielelle fi
+#   ./minfo ../sfkanalen.ts|grep "audio;fi"|cut -d ';' -f 3                     #hakee audio PID:n kielelle fi
+#   ./minfo ../sfkanalen.ts|grep -e "audio;fi" -e "teletextsubtitle;fi"        #hakee sekä tekstityksen että audion kielelle fi
+#   ./minfo ../yle.ts|grep -e "audio;fi" -e "audio;nl" -e "teletextsubtitle;fi" -e "dvbsubtitle;fi"
