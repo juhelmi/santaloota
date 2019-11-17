@@ -52,13 +52,24 @@ if [[ $language == "no" ]] || [ $language == "nor" ]; then longLanguage="nor"; s
 [ ! -f "$videoSource" ] && echo "File not exist!" && exit #If given source file dir does not exist then exit
 lcall=$LC_ALL 
 
-testSubtitles=$(ffprobe "$videoSource" 2>&1 |grep Subtitle|grep "$longLanguage") #Check is DVB and teletext subtitles available
+testSubtitles=$(ffprobe "$videoSource" 2>&1 |grep Stream|grep Subtitle|grep "$longLanguage") #Check is DVB and teletext subtitles available
 echo $testSubtitles
+if [[ $testSubtitles == *"hdmv_pgs_subtitle"* ]];then PGS_Available=1;fi #There is HD DVD subtitle available 
 if [[ $testSubtitles == *"dvb_subtitle"* ]];then dvbSubAvailable=1;fi #There is DVB subtitle available 
 if [[ $testSubtitles == *"dvb_teletext"* ]];then dvbTeletextAvailable=1;fi #There is teletext subtitle available
-if !([[ $dvbSubAvailable ]]||[[ $dvbTeletextAvailable ]]); then echo "No subtitles found";exit;fi
+if !([[ $PGS_Available ]]||[[ $dvbSubAvailable ]]||[[ $dvbTeletextAvailable ]]); then echo "No subtitles found";exit;fi
 
-if [[ $dvbSubAvailable ]];then #Using DVB-subtitles
+if [[ $PGS_Available ]];then #Using HD DVD-subtitles
+    debug "Using DVB subtitles"
+    subtrack=$(echo $testSubtitles|grep "$longLanguage"|grep 'hdmv_pgs_subtitle'|cut -d '#' -f 2|cut -d '(' -f 1)
+    if [[ $subtrack == "" ]]; then
+        echo "Subtitle $language not found!"
+        exit 1
+    fi
+    echo str $subtrack
+    ffmpeg -y -i "$videoSource" -filter_complex [0:v]["$subtrack"]overlay -map 0:a -map 0:v  -c:a copy -c:v libx264 "$baseVideoSource".mp4 # in Raspberry use "-c:v h264_omx"
+    
+elif [[ $dvbSubAvailable ]];then #Using DVB-subtitles
     debug "Using DVB subtitles"
     subtrack=$(echo $testSubtitles|grep "$longLanguage"|grep 'dvb_subtitle'|cut -d '#' -f 2|cut -d '[' -f 1)
     if [[ $subtrack == "" ]]; then
